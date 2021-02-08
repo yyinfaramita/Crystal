@@ -125,7 +125,6 @@ def train_model(model, config, criterion, optimizer, scheduler, dataloaders, dat
 
 def data_confusion(data, target, dgroup, dtarget, types, config):
     if len(dgroup) == 0:
-        # 第一波数据首先扩充
         for i in range(types):
             tmp = []
             for j in range(len(target)):
@@ -136,42 +135,6 @@ def data_confusion(data, target, dgroup, dtarget, types, config):
 
         return dgroup, dtarget, data, target
     else:
-        # 以后每波数据都要分析判断
-        if len(target) != len(dtarget): # 最后一个batch时，数据量非常少
-            num = len(dtarget) - len(target)
-
-            tmp1 = torch.Tensor()
-            tmp3 = torch.Tensor()
-
-            j = 1
-            for i in range(num):
-                k = random.randint(0, len(dgroup) - 1)
-                while len(dgroup[k]) == 0:
-                    k = random.randint(0, len(dgroup) - 1)
-
-                l = random.randint(0, len(dgroup[k]) - 1)
-
-                if j % 2 == 0:
-                    new_point = dgroup[k][l]
-                    tmp2 = new_point
-
-                    tmp = torch.stack([tmp1, tmp2], 0)
-                    data = torch.cat([data, tmp], 0)
-
-                    new_target = torch.tensor(k, dtype=target[0].dtype)
-                    tmp4 = new_target
-                    tmp = torch.stack([tmp3, tmp4], 0)
-                    target = torch.cat([target, tmp], 0)
-                else:
-                    new_point = dgroup[k][l]
-                    tmp1 = new_point
-
-                    new_target = torch.tensor(k, dtype=target[0].dtype)
-                    tmp3 = new_target
-
-                j += 1
-
-
         shapes = data[0].shape
         tcenters = [torch.zeros(shapes)] * types
         tgroup = []
@@ -286,9 +249,6 @@ def data_confusion(data, target, dgroup, dtarget, types, config):
 
 
 def data_balance(data, target, types, config):
-    # print(data[0].shape)
-    # print("edit: " + str(config.edit.size))
-    # 每次数据都修改
     tgroup = []
     tcenters = []
     shapes = data[0].shape
@@ -341,22 +301,18 @@ def data_balance(data, target, types, config):
     return data, target
 
 def gradient_anonymity(net, w_old, w_new, device, config):
-    # 分组平均梯度更新值
     w = w_new
 
-    K = ["fc2.weight"]  # 匿名成组
+    K = ["fc2.weight"] # the last fully connected layer
     for k in K:
-        # print(k)
+
         w[k] = w_new[k] - w_old[k]
         sizes = w[k].shape
         length = len(sizes)
 
         number = []
         tmp = w[k]
-        # print(tmp)
-        # print(tmp.shape) [10,128]
 
-        # 将tensor转换为一维数据，数据的顺序不变
         if length == 1:
             for i in tmp:
                 number.append(i)
@@ -384,7 +340,6 @@ def gradient_anonymity(net, w_old, w_new, device, config):
         for j in range(len(number)):
             number[j] = centers
 
-        # 更新每个梯度
         if length == 1:
             for i in range(len(tmp)):
                 tmp[i] = number[i]
