@@ -1,0 +1,59 @@
+path:
+  data_path: config/config.yaml
+  result_path: results/
+
+general:
+  iftarget: yes # whether the model is the target classifier, or the shadow classifier
+  cuda: 4
+  use_cuda: Yes
+  crystal: 0 # whether the attacker knowns the defense method
+  white: 0 # trains on the black-box or white-box
+  seed: 10
+  train_target_size: 5000
+  test_target_size: 5000
+  number_shadow_model: 50 # 100 for cifar
+  time: 0
+  classes: 100 # the number of the class labels of the dataset
+
+
+defense:
+  epochs: 100
+  learning_rate: 0.001
+  decrease_lr_factor: 0.0000001
+  decrease_lr_every: 1
+
+
+attack:
+  batch_size: 64
+  delta: 1e-5
+  learning_rate: 0.0001
+  momentum: 0.9
+  sigma: 1.0
+  max_per_sample_grad_norm: 1.0
+  l2_norm_clip: 1.0
+  l2: 0.1
+  noise_multiplier: 0.87
+  epochs: 100 #25 max 100 cifar10, 200 sinon
+  decrease_lr_factor: 0.0000001
+  decrease_lr_every: 1
+
+learning:
+  batch_size: 64
+  delta: 1e-5
+  learning_rate: 0.001
+  momentum: 0.9
+  sigma: 1.0
+  max_per_sample_grad_norm: 1.0
+  l2_norm_clip: 1.0
+  l2: 0.1
+  noise_multiplier: 1.1
+  epochs: 100 #25 max 100 cifar10, 200 sinon
+  decrease_lr_factor: 0.0000001
+  decrease_lr_every: 1
+  ml:
+    reg_lambd: 10
+    n_estimators: 10000 # 10000
+
+
+  # only in shadow_model==50 and epoch==100, it is decrease
+  # edit only use in 0.001
