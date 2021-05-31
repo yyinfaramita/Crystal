@@ -16,13 +16,12 @@ import copy
 import random
 from warnings import simplefilter
 
-def train_model(model, config, criterion, optimizer, scheduler, dataloaders, dataset_sizes, num_epochs=25, types=10):
-
-    device = torch.device("cuda:" + str(config.general.cuda) if torch.cuda.is_available() else "cpu")
+def train_model(model, config, criterion, optimizer, dataloaders, dataset_sizes):
     print("DATASET SIZE", dataset_sizes)
     since = time.time()
 
-    best_acc = 0
+    num_epochs = config.learning.epochs
+    types = config.general.classes
 
     for epoch in range(num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
@@ -34,7 +33,6 @@ def train_model(model, config, criterion, optimizer, scheduler, dataloaders, dat
         # Each epoch has a training and validation phase
         for phase in ['train', 'val']:
             if phase == 'train':
-                scheduler.step()
                 model.train()  # Set model to training mode
                 w_old = copy.deepcopy(model.state_dict())
             else:
@@ -67,16 +65,14 @@ def train_model(model, config, criterion, optimizer, scheduler, dataloaders, dat
                             data, target = data_balance(data, target, types, config)
 
 
-                inputs, labels = data.to(device), target.to(device)
+                inputs, labels = data.cuda(), target.cuda()
 
                 optimizer.zero_grad()
                 # forward
                 # track history if only in train
                 with torch.set_grad_enabled(phase == 'train'):
                     outputs = model(inputs)
-
                     _, preds = torch.max(outputs, 1)
-
                     loss = criterion(outputs, labels)
 
                     # backward + optimize only if in training phase
@@ -84,7 +80,7 @@ def train_model(model, config, criterion, optimizer, scheduler, dataloaders, dat
                         loss.backward()
                         optimizer.step()
 
-                        oriinputs, labels = oridata.to(device), oritarget.to(device)
+                        oriinputs, labels = oridata.cuda(), oritarget.cuda()
                         orioutputs = model(oriinputs)
 
                         _, preds = torch.max(orioutputs, 1)
@@ -103,14 +99,10 @@ def train_model(model, config, criterion, optimizer, scheduler, dataloaders, dat
                 # print(w_new)
                 if config.general.iftarget == "yes":
                     if str(config.general.type).find("GA") != -1:
-                        gradient_anonymity(model, w_old, w_new, device, config)
+                        gradient_anonymity(model, w_old, w_new, config)
 
             print('{} Loss: {:.4f} Acc: {:.4f}'.format(
                     phase, epoch_loss, epoch_acc))
-
-            # deep copy the model
-            if phase == 'val' and epoch_acc > best_acc:
-                best_acc = epoch_acc
 
         print()
     time_elapsed = time.time() - since
@@ -118,43 +110,50 @@ def train_model(model, config, criterion, optimizer, scheduler, dataloaders, dat
     print("DONE TRAIN")
     times = 'Training complete in {:.0f}m {:.0f}s'.format(
         time_elapsed // 60, time_elapsed % 60)
-    best_acc = str(best_acc)
 
-    return model, best_acc, times
+    return model, times
 
 
 def data_confusion(data, target, dgroup, dtarget, types, config):
     if len(dgroup) == 0:
+        arr_target = target.detach().cpu().numpy()
         for i in range(types):
             tmp = []
-            for j in range(len(target)):
-                if i == target[j]:
-                    tmp.append(data[j])
+            ranks = np.where(arr_target == i)[0]
+            for j in ranks:
+                tmp.append(data[j])
             dgroup.append(tmp)
         dtarget = target
 
         return dgroup, dtarget, data, target
     else:
-        shapes = data[0].shape
-        tcenters = [torch.zeros(shapes)] * types
-        tgroup = []
 
-        for i in range(types):
-            tmp = []
-            center = torch.zeros(shapes)
-            for j in range(len(target)):
-                if i == target[j]:
-                    tmp.append(data[j])
-                    center = center + data[j]
-            tgroup.append(tmp)
-            if len(tmp) != 0:
-                tcenters[i] = center / len(tmp)
+        shapes = data[0].shape
+        tcenters = []
+        tgroup = []
 
         counts = 0
         lamda = config.large.lamda
+        arr_target = target.detach().cpu().numpy()
         for i in range(types):
+            tmp = []
+            center = torch.zeros(shapes).cuda()
+            ranks = np.where(arr_target == i)[0]
+            # print(ranks)
+            for j in ranks:
+                tmp.append(data[j])
+                center = center + data[j]
+
+            tgroup.append(tmp)
+
+            if len(tmp) != 0:
+                tcenters.append(center / len(tmp))
+            else:
+                tcenters.append(center)
+
             ori = len(dgroup[i])
-            now = len(tgroup[i])
+            now = len(tmp)
+
             if ori > now:
                 N = config.large.N
                 number = int((ori - now) * N)
@@ -172,6 +171,7 @@ def data_confusion(data, target, dgroup, dtarget, types, config):
                 M = config.large.M
                 number = int((now - ori) * M)
                 for t in range(number):
+
                     choose_number = random.randint(0, len(tgroup[i]) - 1)
                     for k in range(len(tgroup[i])):
                         if k != choose_number:
@@ -179,6 +179,7 @@ def data_confusion(data, target, dgroup, dtarget, types, config):
                     tgroup[i].pop(choose_number)
                     counts -= 1
 
+            # print(len(tgroup[i]))
         if counts < 0:
             # print("count < 0")
             for t in range(-counts):
@@ -208,11 +209,11 @@ def data_confusion(data, target, dgroup, dtarget, types, config):
                             choose_number] * lamda
                 tgroup[types_tmp].pop(choose_number)
 
-        data = torch.Tensor()
+        data = torch.Tensor().cuda()
         j = 1
 
-        tmp1 = torch.Tensor()
-        tmp2 = torch.Tensor()
+        tmp1 = torch.Tensor().cuda()
+        tmp2 = torch.Tensor().cuda()
 
         target = dtarget
 
@@ -231,6 +232,7 @@ def data_confusion(data, target, dgroup, dtarget, types, config):
                 new_point = tgroup[types_tmp][0]
 
                 tmp1 = new_point
+
             tgroup[types_tmp].pop(0)
             target[j - 1] = types_tmp
             j += 1
@@ -252,16 +254,19 @@ def data_balance(data, target, types, config):
     tgroup = []
     tcenters = []
     shapes = data[0].shape
+    arr_target = target.detach().cpu().detach()
     for i in range(types):
+        center = torch.zeros(shapes).cuda()
+        ranks = np.where(arr_target == i)[0]
         tmp = []
-        center = torch.zeros(shapes)
-        for j in range(len(target)):
-            if i == target[j]:
-                tmp.append(data[j])
-                center = center + data[j]
+
+        for t in ranks:
+            tmp.append(data[t])
+            center += data[t]
+
         tgroup.append(tmp)
         if len(tmp) != 0:
-            tcenters.append(center/len(tmp))
+            tcenters.append(center / len(tmp))
         else:
             tcenters.append(center)
 
@@ -273,20 +278,17 @@ def data_balance(data, target, types, config):
             size_other = config.edit.size_other
 
             others = random.sample(range(types), int(types * size_other))
-            tmps = torch.zeros(shapes)
+            tmps = torch.zeros(shapes).cuda()
             for k in others:
-                choose_type = k
-                if len(tgroup[choose_type]) != 0:
-                    tmps += tcenters[choose_type]
+                tmps += tcenters[k]
 
             tgroup[i][t] = new_point * (1 - lamda) + tmps * lamda
 
-
-    data = torch.Tensor()
+    data = torch.Tensor().cuda()
     j = 1
 
-    tmp1 = torch.Tensor()
-    tmp2 = torch.Tensor()
+    tmp1 = torch.Tensor().cuda()
+    tmp2 = torch.Tensor().cuda()
     for i in target:
         if j % 2 == 0:
             tmp2 = tgroup[i][0]
@@ -297,76 +299,24 @@ def data_balance(data, target, types, config):
             tmp1 = tgroup[i][0]
             j += 1
         tgroup[i].pop(0)
-        # data = torch.Tensor(data)
+
     return data, target
 
 def gradient_anonymity(net, w_old, w_new, device, config):
     w = w_new
+    k = "fc2.weight"
+    for n in w_new.keys():
+        if "fc2.weight" in n:
+            k = n
+    # print(k)
+    w[k] = w_new[k] - w_old[k]
 
-    K = ["fc2.weight"] # the last fully connected layer
-    for k in K:
+    tmp = w[k]
 
-        w[k] = w_new[k] - w_old[k]
-        sizes = w[k].shape
-        length = len(sizes)
+    aves = tmp.mean().float()
+    number = torch.ones(tmp.size(0), tmp.size(1)).cuda() * aves
 
-        number = []
-        tmp = w[k]
-
-        if length == 1:
-            for i in tmp:
-                number.append(i)
-        elif length == 2:
-            for i in range(len(tmp)):
-                for j in tmp[i]:
-                    number.append(j)
-        elif length == 3:
-            for i in range(len(tmp)):
-                for j in range(len(tmp[i])):
-                    for l in tmp[i][j]:
-                        number.append(l)
-        elif length == 4:
-            for i in range(len(tmp)):
-                for j in range(len(tmp[i])):
-                    for l in range(len(tmp[i][j])):
-                        for m in tmp[i][j][l]:
-                            number.append(m)
-
-
-        y = np.array(number).reshape(-1, 1)
-        y = y.astype(float)
-
-        centers = np.mean(y)
-        for j in range(len(number)):
-            number[j] = centers
-
-        if length == 1:
-            for i in range(len(tmp)):
-                tmp[i] = number[i]
-        elif length == 2:
-            po = 0
-            for i in range(len(tmp)):
-                for j in range(len(tmp[i])):
-                    tmp[i][j] = number[po]
-                    po += 1
-        elif length == 3:
-            po = 0
-            for i in range(len(tmp)):
-                for j in range(len(tmp[i])):
-                    for l in range(len(tmp[i][j])):
-                        tmp[i][j][l] = number[po]
-                        po += 1
-        elif length == 4:
-            po = 0
-            for i in range(len(tmp)):
-                for j in range(len(tmp[i])):
-                    for l in range(len(tmp[i][j])):
-                        for m in range(len(tmp[i][j][l])):
-                            tmp[i][j][l][m] = number[po]
-                            po += 1
-
-        # 重载网络
-        w[k] = tmp + w_old[k]
+    w[k] = number.float() + w_old[k]
 
     net.load_state_dict(w)
 
@@ -390,7 +340,7 @@ def train_attack(shadow_list, data_list, config, num_epochs=100):
 
         for phase in ['train', 'val']:
             for _, (data, target) in enumerate(data_shadow[phase]):
-                data, target = data.to(device), target.to(device)
+                data, target = data.cuda(), target.cuda()
 
                 outputs = model_shadow(data)
                 weights = model_shadow.output
@@ -399,23 +349,23 @@ def train_attack(shadow_list, data_list, config, num_epochs=100):
 
                 if phase == 'train':
                     for (weis, outs, tars) in zip(weights, outputs, target):
-                        first.append(Variable(weis, requires_grad=True).to(device))
+                        first.append(Variable(weis, requires_grad=True).cuda())
                         second.append(
                             Variable(shadow_criterion(outs.unsqueeze(0), tars.unsqueeze(0)).data, requires_grad=True)
-                        .unsqueeze(0).to(device)
+                        .unsqueeze(0).cuda()
                         )
-                        third.append(one_hot[tars].to(device))
+                        third.append(one_hot[tars].cuda())
                         fourth.append(1)
 
                 else:
                     for (weis, outs, tars) in zip(weights, outputs, target):
 
-                        first.append(Variable(weis, requires_grad=True).to(device))
+                        first.append(Variable(weis, requires_grad=True).cuda())
                         second.append(
                             Variable(shadow_criterion(outs.unsqueeze(0), tars.unsqueeze(0)).data, requires_grad=True)
-                                .unsqueeze(0).to(device)
+                                .unsqueeze(0).cuda()
                         )
-                        third.append(one_hot[tars].to(device))
+                        third.append(one_hot[tars].cuda())
                         fourth.append(0)
 
     first, second, third, fourth = shuffle(first, second, third, fourth, random_state=config.general.seed)
@@ -431,7 +381,7 @@ def train_attack(shadow_list, data_list, config, num_epochs=100):
     best_accuracy = 0.0
     best_state = None
 
-    model = White_attack(len1, config.general.classes).to(device)
+    model = White_attack(len1, config.general.classes).cuda()
     model.apply(weights_init_normal)
 
     criterion = nn.BCELoss()
@@ -456,7 +406,7 @@ def train_attack(shadow_list, data_list, config, num_epochs=100):
         epoch_total = 0
                 # Iterate over data.
         for batch_idx, (f, s, t, target) in enumerate(zip(first, second, third, fourth)):
-            labels = target.to(device)
+            labels = target.cuda()
 
             total += labels.size(0)
             epoch_total += labels.size(0)
@@ -526,7 +476,7 @@ def eval_attack(model_attack, model_target, data_target, config):
     for phase in ['train', 'val']:
         for idx, (data, target) in enumerate(data_target[phase]):
 
-            data, target = data.to(device), target.to(device)
+            data, target = data.cuda(), target.cuda()
 
             outputs = model_target(data)
             weights = model_target.output
@@ -535,12 +485,12 @@ def eval_attack(model_attack, model_target, data_target, config):
                 # data_attack.append(([weights.detach(), losses.detach(), one_hots.detach()], 1))
                 for (weis, outs, tars) in zip(weights.detach(), outputs.detach(), target.detach()):
                     attack_train.append(([weis, target_criterion(outs.unsqueeze(0), tars.unsqueeze(0)).unsqueeze(0),
-                                          one_hot[tars].to(device)], 1))
+                                          one_hot[tars].cuda()], 1))
             else:
                 # data_attack.append(([weights.detach(), losses.detach(), one_hots.detach()], 0))
                 for (weis, outs, tars) in zip(weights.detach(), outputs.detach(), target.detach()):
                     attack_out.append(([weis, target_criterion(outs.unsqueeze(0), tars.unsqueeze(0)).unsqueeze(0),
-                                          one_hot[tars].to(device)], 0))
+                                          one_hot[tars].cuda()], 0))
 
     attack_train, attack_out = shuffle(attack_train, attack_out, random_state=config.general.seed)
     attack_train = torch.utils.data.DataLoader(attack_train, batch_size=config.attack.batch_size, shuffle=True)
