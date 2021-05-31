@@ -1,63 +1,59 @@
-import torch.optim
-from dataloaders import *
-from model import *
-from torchvision import transforms
+import random
+import os
+import numpy as np
+import torch
+from dataloaders import custum_CIFAR10
+from model import Net_cifar10
 from trainer_cifar import train_model, train_attack, eval_attack
 from utils.utils import softmax, get_middle
 from sklearn.utils import shuffle
-from torch.optim import lr_scheduler
-import time
 import torch.nn as nn
-import numpy as np
 from sklearn.metrics import accuracy_score, recall_score, precision_score
 import lightgbm as lgb
-from warnings import simplefilter
-import csv
-import os
 
 def crystal_cifar10(config):
     print("START CIFAR10")
-
-    use_cuda = config.general.use_cuda and torch.cuda.is_available()
-
-    device = torch.device("cuda:" + str(config.general.cuda) if use_cuda else "cpu")
-    print(device)
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(config.general.cuda)
 
     print("START TRAINING TARGET MODEL")
-    data_train_target = custum_CIFAR10(True, 0, config, '../data', train=True,
+    data_train = custum_CIFAR10(True, 0, config, '../data', train=True,
                    transform=transforms.Compose([
                        transforms.ToTensor(),
                         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
                    ]))
-    data_test_target = custum_CIFAR10(True, 0, config, '../data', train=False, transform=transforms.Compose([
+    data_val = custum_CIFAR10(True, 0, config, '../data', train=False, transform=transforms.Compose([
                        transforms.ToTensor(),
                         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
                    ]))
+    data_test = custum_CIFAR10(True, 1, config, '../data', train=False, transform=transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    ]))
+    data_train_target = data_train.datasets
+    data_val_target = data_val.datasets
+    data_test_target = data_test.datasets
+    
     criterion = nn.CrossEntropyLoss()
-    train_loader_target = torch.utils.data.DataLoader(data_train_target, batch_size=config.learning.batch_size, shuffle=True)
-    test_loader_target = torch.utils.data.DataLoader(data_test_target, batch_size=config.learning.batch_size)
-    dataloaders_target = {"train": train_loader_target, "val": test_loader_target}
-    dataset_sizes_target = {"train": len(data_train_target), "val": len(data_test_target)}
-    print(len(data_train_target), str(config.general.train_target_size))
+    
+    train_loader_target = torch.utils.data.DataLoader(data_train_target, batch_size=config.learning.batch_size, shuffle=True, drop_last=True)
+    val_loader_target = torch.utils.data.DataLoader(data_val_target, batch_size=config.learning.batch_size, shuffle=True, drop_last=True)
+    test_loader_target = torch.utils.data.DataLoader(data_test_target, batch_size=config.learning.batch_size, shuffle=False, drop_last=True)
 
-    model_target = Net_cifar10().to(device)
-    optimizer_target = torch.optim.SGD(model_target.parameters(), lr=config.learning.learning_rate,
-                              momentum=config.learning.momentum)
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer_target, step_size=config.learning.decrease_lr_factor, gamma=config.learning.decrease_lr_every)
+    dataloaders_target = {"train": train_loader_target, "val": val_loader_target, "test": test_loader_target}
+    dataset_sizes_target = {"train": len(data_train_target), "val": len(data_val_target), "test": len(data_test_target)}
+
+    model_target = Net_cifar10().cuda()
+    optimizer_target = torch.optim.Adm(model_target.parameters(), lr=config.learning.learning_rate)
 
     config.set_subkey("general", "iftarget", "yes") # this mode is the target classifier
-    model_target, best_acc_target, times = train_model(model_target, config, criterion, optimizer_target, exp_lr_scheduler,dataloaders_target,dataset_sizes_target,
-                       num_epochs=config.learning.epochs, types=10)
+    model_target, best_acc_target, times = train_model(model_target, config, criterion, optimizer_target, dataloaders_target,
+                       dataset_sizes_target)
 
-    _, data_test_set, label_test_set, class_test_set = eval_classifiers(model_target, dataloaders_target, device)
+    data_test_set, label_test_set, class_test_set = eval_classifiers(True, model_target, dataloaders_target)
+    print("Target Training time: " + times)
 
-    print("Target——best_accuracy——time: " + str(best_acc_target) + "," + times)
-
-    train_accuracy = eval_target_net(model_target, train_loader_target, config.general.train_target_size,
-                                     device=device)
-
-    test_accuracy = eval_target_net(model_target, test_loader_target, config.general.test_target_size, device=device)
-
+    train_accuracy = eval_target_net(model_target, train_loader_target, config.general.train_target_size)
+    test_accuracy = eval_target_net(model_target, test_loader_target, config.general.test_target_size)
     print("Target——train and test accuracy: " + str(train_accuracy) + ", " + str(test_accuracy))
 
     print("START TRAINING SHADOW MODEL")
@@ -67,48 +63,42 @@ def crystal_cifar10(config):
     label_train_set = []
     class_train_set = []
 
-    if config.general.fed == 1:
+    if config.general.crystal == 1:
         config.set_subkey("general", "iftarget", "yes") # crystal
     else:
         config.set_subkey("general", "iftarget", "no")
 
     for num_model_sahdow in range(config.general.number_shadow_model):
         print("num_" + str(num_model_sahdow))
+
         criterion = nn.CrossEntropyLoss()
-        data_train_shadow = custum_CIFAR10(False, num_model_sahdow, config, '../data', train=True,
-                                           download=True,
-                                           transform=transforms.Compose([
-                                               transforms.ToTensor(),
-                                               transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                                           ]))
-        data_test_shadow = custum_CIFAR10(False, num_model_sahdow, config, '../data', train=False,
-                                          transform=transforms.Compose([
-                                              transforms.ToTensor(),
-                                              transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                                          ]))
+
+        data_shadow = custum_CIFAR10(False, num_model_sahdow, config, '../data', train=True,
+                                     download=True,
+                                     transform=transforms.Compose([
+                                         transforms.ToTensor(),
+                                         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                                     ]))
+        data_train_shadow, data_test_shadow = data_shadow.trains, data_shadow.tests
+
         train_loader_shadow = torch.utils.data.DataLoader(data_train_shadow,
-                                                          batch_size=config.learning.batch_size, shuffle=True)
+                                                          batch_size=config.learning.batch_size, shuffle=True,
+                                                          drop_last=True)
         test_loader_shadow = torch.utils.data.DataLoader(data_test_shadow,
-                                                         batch_size=config.learning.batch_size)
+                                                         batch_size=config.learning.batch_size, shuffle=True,
+                                                         drop_last=True)
         dataloaders_shadow = {"train": train_loader_shadow, "val": test_loader_shadow}
         dataset_sizes_shadow = {"train": len(data_train_shadow), "val": len(data_test_shadow)}
 
-        model_shadow = Net_cifar10().to(device)
+        model_shadow = Net_cifar10().cuda()
 
-        optimizer_shadow = torch.optim.SGD(model_shadow.parameters(), lr=config.learning.learning_rate,
-                                               momentum=config.learning.momentum)
+        optimizer_shadow = torch.optim.Adm(model_shadow.parameters(), lr=config.learning.learning_rate)
 
-        exp_lr_scheduler = lr_scheduler.StepLR(optimizer_shadow, step_size=config.learning.decrease_lr_factor,
-                                               gamma=config.learning.decrease_lr_every)
+        model_shadow, _ = train_model(model_shadow, config, criterion, optimizer_shadow,
+                                         dataloaders_shadow, dataset_sizes_shadow)
 
-        model_shadow, _, _ = train_model(model_shadow, config, criterion, optimizer_shadow,
-                                         exp_lr_scheduler, dataloaders_shadow,
-                                         dataset_sizes_shadow, num_epochs=config.learning.epochs,
-                                         types=10)
-
-        _, data_train_set_unit, label_train_set_unit, class_train_set_unit = eval_classifiers(model_shadow,
-                                                                                              dataloaders_shadow,
-                                                                                              device)
+        data_train_set_unit, label_train_set_unit, class_train_set_unit = eval_classifiers(False, model_shadow,
+                                                                                              dataloaders_shadow)
 
         data_train_set.append(data_train_set_unit)
         label_train_set.append(label_train_set_unit)
@@ -146,7 +136,7 @@ def crystal_cifar10(config):
         accuracy_general = accuracy_score(y_true=label_test_sets, y_pred=y_pred_lgbm)
 
         precision_per_class, recall_per_class, accuracy_per_class = [], [], []
-        for idx in range(10):
+        for idx in range(config.general.classes):
             all_index_class = np.where(class_test_sets == idx)
 
             precision = precision_score(y_true=label_test_sets[all_index_class],
@@ -178,14 +168,14 @@ def crystal_cifar10(config):
 
     print("END CIFAR10")
 
-def eval_target_net(net, testloader, total, device):
+def eval_target_net(net, testloader, total):
 
     correct = 0
     with torch.no_grad():
         net.eval()
         for i, (imgs, lbls) in enumerate(testloader):
 
-            imgs, lbls = imgs.to(device), lbls.to(device)
+            imgs, lbls = imgs.cuda(), lbls.cuda()
             output = net(imgs)
             predicted = output.argmax(dim=1)
 
@@ -198,7 +188,7 @@ def eval_target_net(net, testloader, total, device):
     return accuracy
 
 
-def eval_classifiers(model, dataloaders, device):
+def eval_classifiers(target, model, dataloaders):
     X = []
     Y = []
     C = []
@@ -207,11 +197,14 @@ def eval_classifiers(model, dataloaders, device):
     model.eval()  # Set model to evaluate mode
 
     attack_train = dataloaders["train"]
-    attack_out = dataloaders["val"]
+    if target:
+        attack_out = dataloaders["test"]
+    else:
+        attack_out = dataloaders["val"]
 
     for i, ((train_imgs, train_lbls)) in enumerate(attack_train):
 
-        train_imgs, train_lbls = train_imgs.to(device), train_lbls.to(device)
+        train_imgs, train_lbls = train_imgs.cuda(), train_lbls.cuda()
         train_outputs = model(train_imgs)
 
         for j, out in enumerate(train_outputs.cpu().detach().numpy()):
@@ -223,7 +216,7 @@ def eval_classifiers(model, dataloaders, device):
 
     for i, ((train_imgs, train_lbls)) in enumerate(attack_out):
 
-        train_imgs, train_lbls = train_imgs.to(device), train_lbls.to(device)
+        train_imgs, train_lbls = train_imgs.cuda(), train_lbls.cuda()
         train_outputs = model(train_imgs)
 
         for j, out in enumerate(train_outputs.cpu().detach().numpy()):
@@ -234,6 +227,7 @@ def eval_classifiers(model, dataloaders, device):
             C.append(cla)
 
     X = softmax(np.array(X))
-    return model, np.array(X), np.array(Y), np.array(C)
+
+    return np.array(X), np.array(Y), np.array(C)
 
 
