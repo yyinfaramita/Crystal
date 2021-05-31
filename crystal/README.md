@@ -6,7 +6,7 @@ Required python tool : Python 3.5, Pytorch 1.2.0, torchvision 0.3.0, torchtext 0
 
 # Dataset description: 
 
-the dataset is needed at the data folder
+The dataset is needed at the data folder
 
 # Code usage: 
 
