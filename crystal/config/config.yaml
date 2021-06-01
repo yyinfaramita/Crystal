@@ -25,10 +25,10 @@ learning:
   l2_norm_clip: 1.0
   l2: 0.1
   noise_multiplier: 1.1
-  epochs: 100 #25 max 100 cifar10, 200 sinon
+  epochs: 10
   decrease_lr_factor: 0.0000001
   decrease_lr_every: 1
   ml:
     reg_lambd: 10
-    n_estimators: 10000 # 10000
+    n_estimators: 10000
 
