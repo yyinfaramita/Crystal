@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from dataloaders import custum_CIFAR10
 from model import Net_cifar10
-from trainer_cifar import train_model, train_attack, eval_attack
+from trainer_cifar import train_model
 from utils.utils import softmax, get_middle
 from sklearn.utils import shuffle
 import torch.nn as nn
@@ -46,7 +46,7 @@ def crystal_cifar10(config):
     optimizer_target = torch.optim.Adm(model_target.parameters(), lr=config.learning.learning_rate)
 
     config.set_subkey("general", "iftarget", "yes") # this mode is the target classifier
-    model_target, best_acc_target, times = train_model(model_target, config, criterion, optimizer_target, dataloaders_target,
+    model_target, times = train_model(model_target, config, criterion, optimizer_target, dataloaders_target,
                        dataset_sizes_target)
 
     data_test_set, label_test_set, class_test_set = eval_classifiers(True, model_target, dataloaders_target)
@@ -117,8 +117,7 @@ def crystal_cifar10(config):
     data_test_sets, label_test_sets, class_test_sets = shuffle(data_test_set, label_test_set, class_test_set,
                                                                random_state=config.general.seed)
 
-    if config.general.white == 0: # black-box
-        print("Taille dataset train", len(label_train_sets))
+    print("Taille dataset train", len(label_train_sets))
         print("Taille dataset test", len(label_test_sets))
         print("START FITTING ATTACK MODEL")
 
@@ -161,10 +160,6 @@ def crystal_cifar10(config):
         print("Attack——accuracy_per_class: ")
         print(accuracy_per_class)
 
-    else: # white-box
-        model, _, times = train_attack(all_shadow_models, all_dataloaders_shadow, config, config.attack.epochs)
-        accuracy, precision, recall = eval_attack(model, model_target, dataloaders_target, config)
-        print("accuracy = %.2f, precision = %.2f, recall = %.2f" % (accuracy, precision, recall))
 
     print("END CIFAR10")
 
