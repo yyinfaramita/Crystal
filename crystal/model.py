@@ -29,9 +29,3 @@ class Net_cifar10(nn.Module):
 
         self.output = torch.cat((x1.view(-1, 16 * 16 * 16), x2, x3, x4), 1)
         return x4
-
-
-        y = torch.cat((x1, x2, x3), 1)
-        z = self.encodes(y)
-
-        return z
