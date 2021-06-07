@@ -50,7 +50,7 @@ def train_model(model, config, criterion, optimizer, dataloaders, dataset_sizes)
                         if "DC" in str(config.general.type):
                             config.set_subkey("large", "lamda", random.randint(1, 10) / 10)
                             config.set_subkey("large", "N", random.randint(1, 10) / 10)
-                            config.set_subkey("large", "M", config.large.N)
+                            config.set_subkey("large", "M", random.randint(1, 10) / 10)
 
                             dgroup, dtarget, data, target = data_confusion(data, target, dgroup, dtarget, types, config)
 
@@ -302,9 +302,9 @@ def data_balance(data, target, types, config):
 
 def gradient_anonymity(net, w_old, w_new, device, config):
     w = w_new
-    k = "fc2.weight"
+    k = "fc.weight"
     for n in w_new.keys():
-        if "fc2.weight" in n:
+        if "fc.weight" in n:
             k = n
     # print(k)
     w[k] = w_new[k] - w_old[k]
