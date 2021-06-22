@@ -47,14 +47,14 @@ def train_model(model, config, criterion, optimizer, dataloaders, dataset_sizes)
                 if phase == 'train':
 
                     if config.general.iftarget == "yes":
-                        if "DC" in str(config.general.type):
+                        if "DB" in str(config.general.type):
                             config.set_subkey("large", "lamda", random.randint(1, 10) / 10)
                             config.set_subkey("large", "N", random.randint(1, 10) / 10)
-                            config.set_subkey("large", "M", random.randint(1, 10) / 10)
+                            config.set_subkey("large", "M", config.large.N)
 
                             dgroup, dtarget, data, target = data_confusion(data, target, dgroup, dtarget, types, config)
 
-                        if "DB" in str(config.general.type):
+                        if "DC" in str(config.general.type):
                             config.set_subkey("edit", "lamda", random.randint(1, 10) / 10)
                             config.set_subkey("edit", "size", random.randint(1, 10) / 10)
                             config.set_subkey("edit", "size_other",
@@ -112,7 +112,7 @@ def train_model(model, config, criterion, optimizer, dataloaders, dataset_sizes)
     return model, times
 
 
-def data_confusion(data, target, dgroup, dtarget, types, config):
+def data_balance(data, target, dgroup, dtarget, types, config):
     if len(dgroup) == 0:
         arr_target = target.detach().cpu().numpy()
         for i in range(types):
@@ -248,7 +248,7 @@ def data_confusion(data, target, dgroup, dtarget, types, config):
         return dgroup, dtarget, data, target
 
 
-def data_balance(data, target, types, config):
+def data_confusion(data, target, types, config):
     tgroup = []
     tcenters = []
     shapes = data[0].shape
