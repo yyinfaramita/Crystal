@@ -47,13 +47,6 @@ def train_model(model, config, criterion, optimizer, dataloaders, dataset_sizes)
                 if phase == 'train':
 
                     if config.general.iftarget == "yes":
-                        if "DB" in str(config.general.type):
-                            config.set_subkey("large", "lamda", random.randint(1, 10) / 10)
-                            config.set_subkey("large", "N", random.randint(1, 10) / 10)
-                            config.set_subkey("large", "M", config.large.N)
-
-                            dgroup, dtarget, data, target = data_confusion(data, target, dgroup, dtarget, types, config)
-
                         if "DC" in str(config.general.type):
                             config.set_subkey("edit", "lamda", random.randint(1, 10) / 10)
                             config.set_subkey("edit", "size", random.randint(1, 10) / 10)
@@ -61,6 +54,13 @@ def train_model(model, config, criterion, optimizer, dataloaders, dataset_sizes)
                                               random.randint(1, 10) / 10)
 
                             data, target = data_balance(data, target, types, config)
+                            
+                        if "DB" in str(config.general.type):
+                            config.set_subkey("large", "lamda", random.randint(1, 10) / 10)
+                            config.set_subkey("large", "N", random.randint(1, 10) / 10)
+                            config.set_subkey("large", "M", random.randint(1, 10) / 10)
+
+                            dgroup, dtarget, data, target = data_confusion(data, target, dgroup, dtarget, types, config)
 
 
                 inputs, labels = data.cuda(), target.cuda()
