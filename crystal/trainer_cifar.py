@@ -125,7 +125,9 @@ def data_balance(data, target, dgroup, dtarget, types, config):
 
         return dgroup, dtarget, data, target
     else:
-
+        if target.size(0) != dtarget.size(0):
+            return dgroup, dtarget, data, target
+        
         shapes = data[0].shape
         tcenters = []
         tgroup = []
