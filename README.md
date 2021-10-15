@@ -20,7 +20,12 @@ All the configs is in the config folder, including the epochs, learning rate, tr
 
 If you want to run the CIFAR-10 dataset, you can directly run runs.py (python runs.py) after installing python tools. All the settings keep the same as the paper. 
 
-<!-- # Citation -->
+# Citation
+
+`Yu Yin, Ke Chen, Lidan Shou, and Gang Chen. 2021. Defending Privacy Against More Knowledgeable Membership Inference Attackers. In Proceedings of the 27th ACM SIGKDD Conference on Knowledge Discovery & Data Mining (KDD '21). Association for Computing Machinery, New York, NY, USA, 2026–2036. DOI:https://doi.org/10.1145/3447548.3467444`
+
+# License
+This project is CC-BY-NC-licensed.
 
 # Acknowledgements
 
