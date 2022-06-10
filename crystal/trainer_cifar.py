@@ -41,6 +41,7 @@ def train_model(model, thres, config, criterion, optimizer, dataloaders, dataset
 
                 # if DB or DC
                 if ("DB" in str(config.general.type)) or ("DC" in str(config.general.type)):
+                    # the order of DB/DC in DB+DC is arbitrary 
                     arbitrary = random.choice([True, False])
                     if arbitrary:
                         if "DC" in str(config.general.type):
